@@ -5,7 +5,8 @@ on:
   workflow_dispatch:
 
 env:
-  AWS_REGION: ${{ vars.AWS_REGION != '' && vars.AWS_REGION || 'us-east-1' }}
+  # Prefer Actions secret (many repos store this only as a secret); else variable; else default.
+  AWS_REGION: ${{ secrets.AWS_REGION || vars.AWS_REGION || 'us-east-1' }}
   DBT_TARGET: ci
 
 permissions:
@@ -29,11 +30,13 @@ jobs:
           version: "0.6.8"
 
       - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
+        # v4.2.1+ fixes inputs vs env precedence; unset avoids stale runner AWS_* breaking OIDC.
+        uses: aws-actions/configure-aws-credentials@v4.3.1
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-          role-session-name: churn-prac-dbt-${{ github.run_id }}
+          role-session-name: gha-dbt-athena-${{ github.run_id }}
+          unset-current-credentials: true
 
       - name: Install dependencies
         run: uv sync --frozen --group dev --group dbt
