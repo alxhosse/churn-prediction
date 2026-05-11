@@ -1,0 +1,50 @@
+# Lint + dbt parse/compile (no warehouse connection required for parse).
+# SQLFluff uses dbt templater with dummy Postgres env vars (no server needed for parse).
+name: dbt CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    paths:
+      - "dbt_churn/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/dbt-ci.yml"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    env:
+      DBT_TARGET: dev
+      POSTGRES_HOST: "127.0.0.1"
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ci-not-used
+      POSTGRES_PORT: "5432"
+      POSTGRES_DATABASE: churn_prac
+      POSTGRES_SCHEMA: dbt_schema
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.6.8"
+
+      - name: Install dependencies
+        run: uv sync --frozen --group dev --group dbt
+
+      - name: dbt deps
+        run: uv run dbt deps --project-dir dbt_churn --profiles-dir dbt_churn
+
+      - name: dbt parse
+        run: uv run dbt parse --project-dir dbt_churn --profiles-dir dbt_churn
+
+      - name: SQLFluff
+        run: bash dbt_churn/scripts/sqlfluff-lint.sh dbt_churn/models dbt_churn/macros dbt_churn/analyses dbt_churn/tests dbt_churn/seeds
+
+      - name: Ruff check
+        run: uv run ruff check .
+
+      - name: Ruff format (check)
+        run: uv run ruff format --check .

@@ -1,0 +1,100 @@
+# Build and push churn-train, churn-infer, churn-preprocess to ECR (Terraform-managed repos).
+# Requires secret AWS_ROLE_ARN (OIDC IAM role from aws-terraform-infra).
+name: ML CD — ECR
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "ml/containers/**"
+      - "ml/src/**"
+      - ".github/workflows/ml-cd-ecr.yml"
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION != '' && vars.AWS_REGION || 'us-east-1' }}
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: ml-ecr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  push-images:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: churn-prac-ecr-${{ github.run_id }}
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Image tags
+        id: meta
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          echo "short_sha=${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          REG="${{ steps.ecr.outputs.registry }}"
+          echo "train_uri=${REG}/churn-train:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "infer_uri=${REG}/churn-infer:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+          echo "preprocess_uri=${REG}/churn-preprocess:${SHORT_SHA}" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push churn-train
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ml/containers/train.Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.train_uri }}
+            ${{ steps.ecr.outputs.registry }}/churn-train:latest
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push churn-infer
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ml/containers/inference.Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.infer_uri }}
+            ${{ steps.ecr.outputs.registry }}/churn-infer:latest
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push churn-preprocess
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ml/containers/preprocess.Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.preprocess_uri }}
+            ${{ steps.ecr.outputs.registry }}/churn-preprocess:latest
+          provenance: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "### Pushed to ECR" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ steps.meta.outputs.train_uri }}\` + \`:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ steps.meta.outputs.infer_uri }}\` + \`:latest\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- \`${{ steps.meta.outputs.preprocess_uri }}\` + \`:latest\`" >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,45 @@
+# Manual dbt build on Athena (OIDC). Set secrets below + apply Terraform so this repo is in the OIDC trust list.
+name: dbt CD — Athena
+
+on:
+  workflow_dispatch:
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION != '' && vars.AWS_REGION || 'us-east-1' }}
+  DBT_TARGET: ci
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  dbt-athena:
+    runs-on: ubuntu-latest
+    env:
+      ATHENA_DATABASE: ${{ secrets.ATHENA_DATABASE }}
+      ATHENA_SCHEMA: ${{ secrets.ATHENA_SCHEMA }}
+      ATHENA_S3_STAGING_DIR: ${{ secrets.ATHENA_S3_STAGING_DIR }}
+      ATHENA_S3_DATA_DIR: ${{ secrets.ATHENA_S3_DATA_DIR }}
+      ATHENA_WORK_GROUP: ${{ secrets.ATHENA_WORK_GROUP }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "0.6.8"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: churn-prac-dbt-${{ github.run_id }}
+
+      - name: Install dependencies
+        run: uv sync --frozen --group dev --group dbt
+
+      - name: dbt deps
+        run: uv run dbt deps --project-dir dbt_churn --profiles-dir dbt_churn
+
+      - name: dbt build (Athena)
+        run: uv run dbt build --project-dir dbt_churn --profiles-dir dbt_churn

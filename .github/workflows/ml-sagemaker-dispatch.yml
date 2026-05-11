@@ -1,0 +1,297 @@
+# Manual: SageMaker Training / Processing for churn_ml (train, preprocess, inference).
+#
+# Repo secrets:
+#   AWS_ROLE_ARN                  — OIDC IAM role (Terraform github_actions_churn_role_arn).
+#   SAGEMAKER_EXECUTION_ROLE_ARN  — sagemaker-churn-execution (job RoleArn).
+#
+# Optional repo variables: AWS_REGION (default us-east-1), ML_INSTANCE_TYPE (default ml.m5.large).
+#
+# Layout matches ml/src/churn_ml (SageMaker paths under /opt/ml/...).
+name: ML — SageMaker jobs
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_training:
+        description: "Training job (churn-train): S3 prefix must contain train.csv, valid.csv, feature_columns.json"
+        type: boolean
+        default: false
+      run_preprocess:
+        description: "Processing job (churn-preprocess): sklearn train/valid split from marts"
+        type: boolean
+        default: false
+      run_infer:
+        description: "Processing job (churn-infer): batch predictions"
+        type: boolean
+        default: false
+      training_data_s3_uri:
+        description: "S3 prefix for channel training (train.csv, valid.csv, feature_columns.json)"
+        type: string
+        default: ""
+      models_output_s3_uri:
+        description: "S3 URI prefix for training job output (model artifacts)"
+        type: string
+        default: ""
+      preprocess_train_s3_uri:
+        description: "S3 prefix for churn_training_dataset (CSV or Parquet dir)"
+        type: string
+        default: ""
+      preprocess_current_s3_uri:
+        description: "S3 prefix for current_customer_dataset (CSV or Parquet dir)"
+        type: string
+        default: ""
+      preprocess_output_s3_uri:
+        description: "S3 prefix for preprocess outputs (train.csv, valid.csv, current.csv, …)"
+        type: string
+        default: ""
+      infer_model_s3_uri:
+        description: "S3 prefix with xgboost_churn_model.joblib + feature_columns.json"
+        type: string
+        default: ""
+      infer_current_s3_uri:
+        description: "S3 prefix with current customer features (e.g. current.csv)"
+        type: string
+        default: ""
+      predictions_output_s3_uri:
+        description: "S3 prefix for inference outputs (predictions + figures)"
+        type: string
+        default: ""
+      ecr_image_tag:
+        description: "ECR tag for churn-train / churn-infer / churn-preprocess"
+        type: string
+        default: "latest"
+      wait_for_completion:
+        description: "Wait for each started job to finish"
+        type: boolean
+        default: false
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION != '' && vars.AWS_REGION || 'us-east-1' }}
+  ML_INSTANCE_TYPE: ${{ vars.ML_INSTANCE_TYPE != '' && vars.ML_INSTANCE_TYPE || 'ml.m5.large' }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  sagemaker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Require at least one job type
+        if: ${{ !inputs.run_training && !inputs.run_preprocess && !inputs.run_infer }}
+        run: |
+          echo 'Set run_training, run_preprocess, and/or run_infer to true.' >&2
+          exit 1
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: churn-prac-sm-${{ github.run_id }}
+
+      - name: Resolve ECR image URIs
+        id: images
+        run: |
+          ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
+          REG="${ACCOUNT}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          TAG="${{ inputs.ecr_image_tag }}"
+          echo "train_image=${REG}/churn-train:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "infer_image=${REG}/churn-infer:${TAG}" >> "$GITHUB_OUTPUT"
+          echo "preprocess_image=${REG}/churn-preprocess:${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Start training job
+        id: train
+        if: inputs.run_training
+        env:
+          TRAIN_IMAGE: ${{ steps.images.outputs.train_image }}
+          TRAIN_DATA: ${{ inputs.training_data_s3_uri }}
+          MODEL_OUT: ${{ inputs.models_output_s3_uri }}
+          SM_ROLE: ${{ secrets.SAGEMAKER_EXECUTION_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SM_ROLE:-}" ]]; then
+            echo "SAGEMAKER_EXECUTION_ROLE_ARN secret is required." >&2
+            exit 1
+          fi
+          if [[ -z "${TRAIN_DATA}" || -z "${MODEL_OUT}" ]]; then
+            echo "training_data_s3_uri and models_output_s3_uri are required for training." >&2
+            exit 1
+          fi
+          NAME="churn-train-${{ github.run_id }}-a${GITHUB_RUN_ATTEMPT}-${GITHUB_SHA::7}"
+          NAME="${NAME:0:63}"
+          jq -n \
+            --arg name "$NAME" \
+            --arg role "$SM_ROLE" \
+            --arg image "$TRAIN_IMAGE" \
+            --arg train "$TRAIN_DATA" \
+            --arg out "$MODEL_OUT" \
+            --arg itype "${{ env.ML_INSTANCE_TYPE }}" \
+            '{
+              TrainingJobName: $name,
+              RoleArn: $role,
+              AlgorithmSpecification: {TrainingImage: $image, TrainingInputMode: "File"},
+              ResourceConfig: {InstanceType: $itype, InstanceCount: 1, VolumeSizeInGB: 30},
+              InputDataConfig: [{
+                ChannelName: "training",
+                DataSource: {S3DataSource: {S3DataType: "S3Prefix", S3Uri: $train, S3DataDistributionType: "FullyReplicated"}}
+              }],
+              OutputDataConfig: {S3OutputPath: $out},
+              StoppingCondition: {MaxRuntimeInSeconds: 7200}
+            }' > /tmp/training-job.json
+          aws sagemaker create-training-job --cli-input-json file:///tmp/training-job.json
+          echo "training_job_name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for training job
+        if: inputs.run_training && inputs.wait_for_completion
+        env:
+          NAME: ${{ steps.train.outputs.training_job_name }}
+        run: |
+          set -euo pipefail
+          aws sagemaker wait training-job-completed-or-stopped --training-job-name "$NAME"
+
+      - name: Start preprocess processing job
+        id: preprocess
+        if: inputs.run_preprocess
+        env:
+          PRE_IMAGE: ${{ steps.images.outputs.preprocess_image }}
+          TRAIN_URI: ${{ inputs.preprocess_train_s3_uri }}
+          CUR_URI: ${{ inputs.preprocess_current_s3_uri }}
+          OUT_URI: ${{ inputs.preprocess_output_s3_uri }}
+          SM_ROLE: ${{ secrets.SAGEMAKER_EXECUTION_ROLE_ARN }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SM_ROLE:-}" ]]; then
+            echo "SAGEMAKER_EXECUTION_ROLE_ARN secret is required." >&2
+            exit 1
+          fi
+          if [[ -z "${TRAIN_URI}" || -z "${CUR_URI}" || -z "${OUT_URI}" ]]; then
+            echo "preprocess_train_s3_uri, preprocess_current_s3_uri, and preprocess_output_s3_uri are required." >&2
+            exit 1
+          fi
+          NAME="churn-preprocess-${{ github.run_id }}-a${GITHUB_RUN_ATTEMPT}-${GITHUB_SHA::7}"
+          NAME="${NAME:0:63}"
+          jq -n \
+            --arg name "$NAME" \
+            --arg role "$SM_ROLE" \
+            --arg image "$PRE_IMAGE" \
+            --arg out "$OUT_URI" \
+            --arg itype "${{ env.ML_INSTANCE_TYPE }}" \
+            --arg train "$TRAIN_URI" \
+            --arg cur "$CUR_URI" \
+            '{
+              ProcessingJobName: $name,
+              RoleArn: $role,
+              AppSpecification: {
+                ImageUri: $image,
+                ContainerEntrypoint: ["python", "-m", "churn_ml.preprocess"],
+                ContainerArguments: [
+                  "--train-path", "/opt/ml/processing/input/train/churn_training_dataset.csv",
+                  "--current-path", "/opt/ml/processing/input/current/current_customer_dataset.csv",
+                  "--output-dir", "/opt/ml/processing/output"
+                ]
+              },
+              ProcessingInputs: [
+                {
+                  InputName: "train-data",
+                  S3Input: {S3Uri: $train, LocalPath: "/opt/ml/processing/input/train", S3DataType: "S3Prefix", S3InputMode: "File"}
+                },
+                {
+                  InputName: "current-data",
+                  S3Input: {S3Uri: $cur, LocalPath: "/opt/ml/processing/input/current", S3DataType: "S3Prefix", S3InputMode: "File"}
+                }
+              ],
+              ProcessingOutputConfig: {
+                Outputs: [{
+                  OutputName: "processed",
+                  S3Output: {S3Uri: $out, LocalPath: "/opt/ml/processing/output", S3UploadMode: "EndOfJob"}
+                }]
+              },
+              ProcessingResources: {ClusterConfig: {InstanceCount: 1, InstanceType: $itype, VolumeSizeInGB: 30}},
+              StoppingCondition: {MaxRuntimeInSeconds: 7200}
+            }' > /tmp/preprocess-job.json
+          aws sagemaker create-processing-job --cli-input-json file:///tmp/preprocess-job.json
+          echo "preprocess_job_name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for preprocess job
+        if: inputs.run_preprocess && inputs.wait_for_completion
+        env:
+          NAME: ${{ steps.preprocess.outputs.preprocess_job_name }}
+        run: |
+          set -euo pipefail
+          aws sagemaker wait processing-job-completed-or-stopped --processing-job-name "$NAME"
+
+      - name: Start infer processing job
+        id: infer
+        if: inputs.run_infer
+        env:
+          INFER_IMAGE: ${{ steps.images.outputs.infer_image }}
+          PRED_OUT: ${{ inputs.predictions_output_s3_uri }}
+          SM_ROLE: ${{ secrets.SAGEMAKER_EXECUTION_ROLE_ARN }}
+          MODEL_URI: ${{ inputs.infer_model_s3_uri }}
+          FEAT_URI: ${{ inputs.infer_current_s3_uri }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${SM_ROLE:-}" ]]; then
+            echo "SAGEMAKER_EXECUTION_ROLE_ARN secret is required." >&2
+            exit 1
+          fi
+          if [[ -z "${MODEL_URI}" || -z "${FEAT_URI}" || -z "${PRED_OUT}" ]]; then
+            echo "infer_model_s3_uri, infer_current_s3_uri, and predictions_output_s3_uri are required for infer." >&2
+            exit 1
+          fi
+          NAME="churn-infer-${{ github.run_id }}-a${GITHUB_RUN_ATTEMPT}-${GITHUB_SHA::7}"
+          NAME="${NAME:0:63}"
+          jq -n \
+            --arg name "$NAME" \
+            --arg role "$SM_ROLE" \
+            --arg image "$INFER_IMAGE" \
+            --arg model "$MODEL_URI" \
+            --arg feat "$FEAT_URI" \
+            --arg out "$PRED_OUT" \
+            --arg itype "${{ env.ML_INSTANCE_TYPE }}" \
+            '{
+              ProcessingJobName: $name,
+              RoleArn: $role,
+              AppSpecification: {
+                ImageUri: $image,
+                ContainerEntrypoint: ["python", "-m", "churn_ml.inference"],
+                ContainerArguments: [
+                  "--current-path", "/opt/ml/processing/input/current/current.csv",
+                  "--model-path", "/opt/ml/processing/model/xgboost_churn_model.joblib",
+                  "--feature-columns-path", "/opt/ml/processing/model/feature_columns.json",
+                  "--prediction-output-path", "/opt/ml/processing/output/predictions/current_customer_churn_predictions.csv",
+                  "--histogram-output-path", "/opt/ml/processing/output/figures/churn_probability_histogram.png"
+                ]
+              },
+              ProcessingInputs: [
+                {
+                  InputName: "model",
+                  S3Input: {S3Uri: $model, LocalPath: "/opt/ml/processing/model", S3DataType: "S3Prefix", S3InputMode: "File"}
+                },
+                {
+                  InputName: "current",
+                  S3Input: {S3Uri: $feat, LocalPath: "/opt/ml/processing/input/current", S3DataType: "S3Prefix", S3InputMode: "File"}
+                }
+              ],
+              ProcessingOutputConfig: {
+                Outputs: [{
+                  OutputName: "output",
+                  S3Output: {S3Uri: $out, LocalPath: "/opt/ml/processing/output", S3UploadMode: "EndOfJob"}
+                }]
+              },
+              ProcessingResources: {ClusterConfig: {InstanceCount: 1, InstanceType: $itype, VolumeSizeInGB: 30}},
+              StoppingCondition: {MaxRuntimeInSeconds: 7200}
+            }' > /tmp/infer-job.json
+          aws sagemaker create-processing-job --cli-input-json file:///tmp/infer-job.json
+          echo "infer_job_name=$NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for infer processing job
+        if: inputs.run_infer && inputs.wait_for_completion
+        env:
+          NAME: ${{ steps.infer.outputs.infer_job_name }}
+        run: |
+          set -euo pipefail
+          aws sagemaker wait processing-job-completed-or-stopped --processing-job-name "$NAME"
