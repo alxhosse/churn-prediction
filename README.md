@@ -24,6 +24,10 @@ Same **`AWS_ROLE_ARN`** as above (needs Athena + Glue + S3 on your bucket prefix
 | **`ATHENA_S3_STAGING_DIR`** | Athena query results `s3://.../` (see Terraform `churn_prac_athena_staging_s3_uri`). |
 | **`ATHENA_S3_DATA_DIR`** | dbt CTAS warehouse `s3://.../` (see `churn_prac_dbt_athena_s3_data_uri`). |
 | **`ATHENA_WORK_GROUP`** | e.g. `churn_prac`. |
+| **`ATHENA_ML_EXPORT_CHURN_TRAINING_PREFIX`** | `s3://…/` prefix for **`churn_training_dataset`** Parquet CTAS (must exist; e.g. fight_churn bucket `ml/exports/train/…/`). |
+| **`ATHENA_ML_EXPORT_CURRENT_CUSTOMER_PREFIX`** | `s3://…/` prefix for **`current_customer_dataset`** Parquet CTAS (e.g. `ml/exports/infer/…/`). |
+
+If these two are missing from the workflow **`env`**, dbt falls back to placeholder `s3://must-set-…/` and Athena returns **`NoSuchBucket`**.
 
 ### dbt CI — `dbt-ci.yml`
 

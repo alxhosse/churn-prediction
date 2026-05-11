@@ -1,4 +1,4 @@
-# Manual dbt build on Athena (OIDC). Set secrets below + apply Terraform so this repo is in the OIDC trust list.
+# Manual dbt build on Athena (OIDC). Secrets: ATHENA_* + ATHENA_ML_EXPORT_* (real S3 prefixes) + AWS_ROLE_ARN; Terraform OIDC trust for this repo.
 name: dbt CD — Athena
 
 on:
@@ -22,6 +22,9 @@ jobs:
       ATHENA_S3_STAGING_DIR: ${{ secrets.ATHENA_S3_STAGING_DIR }}
       ATHENA_S3_DATA_DIR: ${{ secrets.ATHENA_S3_DATA_DIR }}
       ATHENA_WORK_GROUP: ${{ secrets.ATHENA_WORK_GROUP }}
+      # Required for Athena CTAS marts (Parquet); must be real s3:// buckets/prefixes (see dbt_churn/.env.example).
+      ATHENA_ML_EXPORT_CHURN_TRAINING_PREFIX: ${{ secrets.ATHENA_ML_EXPORT_CHURN_TRAINING_PREFIX }}
+      ATHENA_ML_EXPORT_CURRENT_CUSTOMER_PREFIX: ${{ secrets.ATHENA_ML_EXPORT_CURRENT_CUSTOMER_PREFIX }}
     steps:
       - uses: actions/checkout@v4
 

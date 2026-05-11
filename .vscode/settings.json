@@ -1,0 +1,4 @@
+{
+    "dbt.dbtPythonPathOverride": "/Users/alex/churn-prac/.venv/bin/python3",
+    "dbt.perspectiveTheme": "Vintage"
+}
