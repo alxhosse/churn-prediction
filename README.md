@@ -1,4 +1,4 @@
-# churn-prac
+# Churn Prediction
 
 Practice repo for a Fight Churn–style pipeline: event data in PostgreSQL, dbt models (Postgres locally, Amazon Athena in CI/CD), and SageMaker-style train / preprocess / inference containers. Companion Terraform for AWS (OIDC role, ECR, Athena paths, and so on) lives in the **`aws-terraform-infra`** repo — apply that stack and trust this GitHub repository for OIDC before cloud workflows succeed.
 
