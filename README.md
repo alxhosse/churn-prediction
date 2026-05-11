@@ -1,42 +1,129 @@
 # churn-prac
 
-## GitHub Actions — required secrets
+Practice repo for a Fight Churn–style pipeline: event data in PostgreSQL, dbt models (Postgres locally, Amazon Athena in CI/CD), and SageMaker-style train / preprocess / inference containers. Companion Terraform for AWS (OIDC role, ECR, Athena paths, and so on) lives in the **`aws-terraform-infra`** repo — apply that stack and trust this GitHub repository for OIDC before cloud workflows succeed.
 
-Configure under **Settings → Secrets and variables → Actions** (and optional **Variables**).
+---
 
-### ML (ECR + SageMaker) — workflows `ml-cd-ecr.yml`, `ml-sagemaker-dispatch.yml`
+## Prerequisites
 
-| Secret | Description |
-|--------|-------------|
-| **`AWS_ROLE_ARN`** | IAM role ARN from Terraform output `github_actions_churn_role_arn` (OIDC; repo must be trusted, e.g. `alxhosse/churn-prac`). |
-| **`SAGEMAKER_EXECUTION_ROLE_ARN`** | SageMaker execution role ARN from Terraform `sagemaker_churn_execution_role_arn`. |
+- [Docker](https://docs.docker.com/get-docker/) (for Postgres and SageMaker Local Mode)
+- [uv](https://docs.astral.sh/uv/) (Python 3.13; see `pyproject.toml`)
 
-Optional **Variables**: `AWS_REGION` (default `us-east-1`), `ML_INSTANCE_TYPE` (default `ml.m5.large`).
+---
 
-### dbt on Athena — workflow `dbt-cd.yml`
+## Local development
 
-Runs on **push to `main`** or **pull request** when **`dbt_churn/**`** changes, and on **`workflow_dispatch`**. Same **`AWS_ROLE_ARN`** as above (needs Athena + Glue + S3 on your bucket prefixes).
+### 1. Postgres in Docker
 
-| Secret | Description |
-|--------|-------------|
-| **`ATHENA_DATABASE`** | Usually `awsdatacatalog`. |
+From the repo root:
+
+```bash
+make up
+```
+
+This builds and starts PostgreSQL via `local-db/docker-compose.yml` (default host port **5433** so another Postgres can use 5432). Optional: copy `local-db/.env.example` to `local-db/.env` and adjust.
+
+Useful targets: `make down`, `make psql`, `make url`, `make reload-data`. To fully reload seed data after the volume already exists: `docker compose -f local-db/docker-compose.yml down -v`, then `make up` again.
+
+### 2. dbt against local Postgres
+
+```bash
+cp dbt_churn/.env.example dbt_churn/.env   # tweak if you changed Postgres port or credentials
+uv sync --frozen --group dev --group dbt
+make -C dbt_churn dbt-deps
+make -C dbt_churn dbt-build    # or: dbt-run / dbt-test
+```
+
+The default profile target is **`dev`** (Postgres). For Athena from your laptop, set `DBT_TARGET=ci` and the `ATHENA_*` variables described in `dbt_churn/.env.example` (and in the secrets section below).
+
+### 3. CSV exports for ML notebooks
+
+The preprocess notebook expects **`ml/outputs/churn_training_dataset.csv`** and **`ml/outputs/current_customer_dataset.csv`**. After a successful local dbt build, you can export the marts with the helper scripts (they write to `./outputs/` at the repo root by default):
+
+```bash
+mkdir -p ml/outputs outputs
+uv run python scripts/export_churn_training_dataset.py
+uv run python scripts/output.py
+cp outputs/churn_training_dataset.csv outputs/current_customer_dataset.csv ml/outputs/
+```
+
+### 4. SageMaker Local Mode notebooks
+
+These run the same Docker images CI pushes to ECR, but on your machine using [SageMaker Local Mode](https://docs.aws.amazon.com/sagemaker/latest/dg/use-with-sm.html):
+
+- `ml/notebooks/sagemaker_local_preprocess.ipynb`
+- `ml/notebooks/sagemaker_local_training.ipynb`
+- `ml/notebooks/sagemaker_local_inference.ipynb`
+
+**Setup**
+
+1. Install the AWS SageMaker Python SDK (not pinned in this repo’s lockfile): e.g. `uv pip install sagemaker`.
+2. Install the **`ml`** dependency group if you edit or run package code outside the containers: `uv sync --frozen --group ml` (plus any split groups you need).
+3. Build images from the **repository root** (tags must match the notebooks):
+
+   ```bash
+   docker build -f ml/containers/preprocess.Dockerfile -t churn-preprocess:local .
+   docker build -f ml/containers/train.Dockerfile -t churn-train:local .
+   docker build -f ml/containers/inference.Dockerfile -t churn-inference:local .
+   ```
+
+4. Open a notebook server from the repo root (or set `PROJECT_ROOT` in the first cells as documented in each notebook). Training expects processed files under `ml/outputs/processed/`; inference expects a trained model under `ml/outputs/models/` after you run preprocess + train flows.
+
+---
+
+## GitHub Actions (CI/CD)
+
+| Workflow | When it runs | What it does |
+|----------|----------------|---------------|
+| **dbt CI** (`dbt-ci.yml`) | **Push** to `main` (any paths); **PR** when `dbt_churn/**`, `pyproject.toml`, `uv.lock`, or this workflow changes | Spins up Postgres in Actions, **`dbt parse`**, SQLFluff, Ruff (no Athena). |
+| **dbt CD — Athena** (`dbt-cd.yml`) | Push to `main` or PR affecting `dbt_churn/**`, or manual dispatch | OIDC → AWS, **`dbt build`** against Athena (including CTAS exports when secrets are set). |
+| **ML CD — ECR** (`ml-cd-ecr.yml`) | Push to `main` changing `ml/containers/**` or `ml/src/**`, or manual dispatch | Builds and pushes **churn-train**, **churn-preprocess**, **churn-infer** images to ECR. |
+| **ML — SageMaker jobs** (`ml-sagemaker-dispatch.yml`) | Manual **workflow_dispatch** | Starts SageMaker Training / Processing jobs using those ECR images and S3 prefixes you provide. |
+
+Terraform must expose OIDC trust for this repo (`churn_github_actions_repository_extra`) so **`AWS_ROLE_ARN`** succeeds. **`SAGEMAKER_EXECUTION_ROLE_ARN`** is required for the SageMaker dispatch workflow.
+
+---
+
+## Required GitHub Secrets (and optional variables)
+
+Configure under **Settings → Secrets and variables → Actions** (secrets unless noted).
+
+### ML (ECR + SageMaker): `ml-cd-ecr.yml`, `ml-sagemaker-dispatch.yml`
+
+| Name | Purpose |
+|------|--------|
+| **`AWS_ROLE_ARN`** | IAM role ARN from Terraform output `github_actions_churn_role_arn` (OIDC). |
+| **`SAGEMAKER_EXECUTION_ROLE_ARN`** | SageMaker execution role from Terraform `sagemaker_churn_execution_role_arn`. |
+
+Optional **variables**: `AWS_REGION` (default `us-east-1`), `ML_INSTANCE_TYPE` (default `ml.m5.large`).
+
+### dbt on Athena: `dbt-cd.yml`
+
+Same **`AWS_ROLE_ARN`**; the role needs Athena, Glue, and S3 access for your configured prefixes.
+
+| Name | Purpose |
+|------|--------|
+| **`ATHENA_DATABASE`** | Typically `awsdatacatalog`. |
 | **`ATHENA_SCHEMA`** | Glue / dbt build schema (e.g. `dbt_churn_ci`). |
-| **`ATHENA_S3_STAGING_DIR`** | Athena query results `s3://.../` (see Terraform `churn_prac_athena_staging_s3_uri`). |
-| **`ATHENA_S3_DATA_DIR`** | dbt CTAS warehouse `s3://.../` (see `churn_prac_dbt_athena_s3_data_uri`). |
+| **`ATHENA_S3_STAGING_DIR`** | Athena query results URI `s3://.../` (e.g. Terraform `churn_prac_athena_staging_s3_uri`). |
+| **`ATHENA_S3_DATA_DIR`** | dbt warehouse / CTAS base `s3://.../` (e.g. `churn_prac_dbt_athena_s3_data_uri`). |
 | **`ATHENA_WORK_GROUP`** | e.g. `churn_prac`. |
-| **`ATHENA_ML_EXPORT_CHURN_TRAINING_PREFIX`** | `s3://…/` prefix for **`churn_training_dataset`** Parquet CTAS (must exist; e.g. fight_churn bucket `ml/exports/train/…/`). |
-| **`ATHENA_ML_EXPORT_CURRENT_CUSTOMER_PREFIX`** | `s3://…/` prefix for **`current_customer_dataset`** Parquet CTAS (e.g. `ml/exports/infer/…/`). |
+| **`ATHENA_ML_EXPORT_CHURN_TRAINING_PREFIX`** | `s3://.../` prefix for **`churn_training_dataset`** Parquet CTAS (must exist). |
+| **`ATHENA_ML_EXPORT_CURRENT_CUSTOMER_PREFIX`** | `s3://.../` prefix for **`current_customer_dataset`** Parquet CTAS (must exist). |
 
-If these two are missing from the workflow **`env`**, dbt falls back to placeholder `s3://must-set-…/` and Athena returns **`NoSuchBucket`**.
+If the two **`ATHENA_ML_EXPORT_*`** values are missing in the workflow environment, dbt falls back to placeholder buckets and Athena can return **`NoSuchBucket`**.
 
-### dbt CI — `dbt-ci.yml`
+### SageMaker layout (cloud)
 
-No cloud secrets: uses dummy Postgres env for **dbt parse** and SQLFluff only.
+- **Training** expects `train.csv`, `valid.csv`, and `feature_columns.json` under the training channel prefix.
+- **Preprocess** reads marts as `churn_training_dataset` and `current_customer_dataset` (CSV or layout compatible with `churn_ml.preprocess`).
+- **Infer** expects `current.csv` at the current-features prefix and `xgboost_churn_model.joblib` plus `feature_columns.json` at the model prefix.
 
-### SageMaker workflow notes
+---
 
-- **Training** expects `train.csv`, `valid.csv`, `feature_columns.json` under the **`training`** channel prefix (see `churn_ml.train` defaults under `/opt/ml/input/data/training/`).
-- **Preprocess** mounts marts as `churn_training_dataset.csv` and `current_customer_dataset.csv` under the input prefixes (CSV or layout compatible with `churn_ml.preprocess`).
-- **Infer** expects `current.csv` under the current-features prefix and `xgboost_churn_model.joblib` + `feature_columns.json` under the model prefix (aligned with preprocess output + training).
+## Related paths
 
-Apply **`aws-terraform-infra`** so `churn_github_actions_repository_extra` includes **`alxhosse/churn-prac`** before OIDC from this repo will succeed.
+- `dbt_churn/` — dbt project and `make` shortcuts  
+- `local-db/` — Postgres Docker image and load SQL  
+- `ml/src/churn_ml/` — train, preprocess, inference entrypoints  
+- `.github/workflows/` — CI/CD definitions  
