@@ -1,4 +1,4 @@
-# dbt + uv + SQLFluff + Ruff — uses the churn-prac repo root venv (run: make sync from here).
+# dbt + uv + SQLFluff + Ruff — uses the churn-prediction repo root venv (run: make sync from here).
 # Optional: dbt_churn/.env or repo-root .env for Postgres.
 
 SHELL := /bin/bash

@@ -1,5 +1,5 @@
 [project]
-name = "churn-prac"
+name = "churn-prediction"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"

@@ -1,4 +1,4 @@
-name: churn-prac
+name: churn-prediction
 
 services:
   postgres:

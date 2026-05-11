@@ -1,4 +1,4 @@
-"""Render churn-prac Athena + dbt + SageMaker flow (diagrams)."""
+"""Render churn-prediction Athena + dbt + SageMaker flow (diagrams)."""
 
 from __future__ import annotations
 

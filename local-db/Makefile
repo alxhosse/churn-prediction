@@ -1,4 +1,4 @@
-# PostgreSQL for churn-prac — run from repo root with: make -C local-db up
+# PostgreSQL for churn-prediction — run from repo root with: make -C local-db up
 # Defaults: user postgres / password playground / database churn_prac / schema events.user_actions.
 #
 # Host port defaults to 5433 (see docker-compose.yml). Tools that assume 5432 will fail unless you set

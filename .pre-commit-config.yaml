@@ -1,3 +1,4 @@
+# Mirrors .github/workflows/dbt-ci.yml for merge-time checks — plus optional manual hooks (see Makefile `dbt-ci`).
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -9,14 +10,38 @@ repos:
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.12
     hooks:
+      # CI: `ruff check .` (no autofix)
       - id: ruff
-        args: [--fix]
       - id: ruff-format
+        # CI: `ruff format --check .`
+        args: [--check]
   - repo: local
     hooks:
+      # Same SQLFluff path list as dbt-ci.yml — pass_filenames: false avoids partial lint on unrelated staged subsets.
       - id: sqlfluff-lint
-        name: sqlfluff lint (dbt / Postgres)
+        name: sqlfluff lint (dbt dirs, CI parity)
         language: system
-        entry: bash dbt_churn/scripts/sqlfluff-lint.sh
-        types: [sql]
-        pass_filenames: true
+        entry: bash dbt_churn/scripts/sqlfluff-lint.sh dbt_churn/models dbt_churn/macros dbt_churn/analyses dbt_churn/tests dbt_churn/seeds
+        files: (^dbt_churn/)|(^packages\.yaml$)|(^packages\.yml$)
+        pass_filenames: false
+      - id: wait-for-postgres
+        name: wait for Postgres (local dbt templater)
+        language: system
+        entry: bash scripts/wait_for_postgres.sh
+        pass_filenames: false
+        always_run: true
+        stages: [manual]
+      - id: dbt-deps
+        name: dbt deps
+        language: system
+        entry: bash -c 'set -euo pipefail; root=$(git rev-parse --show-toplevel); cd "$root"; if [[ -f dbt_churn/.env ]]; then set -a && source dbt_churn/.env && set +a; elif [[ -f .env ]]; then set -a && source .env && set +a; fi; export DBT_TARGET="${DBT_TARGET:-dev}"; uv run dbt deps --project-dir dbt_churn --profiles-dir dbt_churn'
+        pass_filenames: false
+        always_run: true
+        stages: [manual]
+      - id: dbt-parse
+        name: dbt parse
+        language: system
+        entry: bash -c 'set -euo pipefail; root=$(git rev-parse --show-toplevel); cd "$root"; if [[ -f dbt_churn/.env ]]; then set -a && source dbt_churn/.env && set +a; elif [[ -f .env ]]; then set -a && source .env && set +a; fi; export DBT_TARGET="${DBT_TARGET:-dev}"; uv run dbt parse --project-dir dbt_churn --profiles-dir dbt_churn'
+        pass_filenames: false
+        always_run: true
+        stages: [manual]

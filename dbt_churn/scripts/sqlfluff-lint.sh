@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Load env for SQLFluff's dbt templater; run from churn-prac repo root via uv.
+# Load env for SQLFluff's dbt templater; run from churn-prediction repo root via uv.
 set -euo pipefail
 
 churn_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"

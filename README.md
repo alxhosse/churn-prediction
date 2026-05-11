@@ -4,7 +4,7 @@ Practice repo for a Fight Churn–style pipeline: event data in PostgreSQL, dbt 
 
 **Architecture (Athena · dbt · SageMaker):**
 
-![Churn-prac Athena · dbt · SageMaker](diagrams/athena_dbt_churn_ci.png)
+![Churn-prediction Athena · dbt · SageMaker](diagrams/athena_dbt_churn_ci.png)
 
 ---
 
@@ -75,7 +75,7 @@ These run the same Docker images CI pushes to ECR, but on your machine using [Sa
 1. **Separate env `./.venv-sm` for SageMaker Python SDK v2** (`sagemaker` is deliberately **not** in **`uv.lock`**). Use **`.venv-sm`** only for notebooks + **`sagemaker`**, and keep **`./.venv`** for **`uv sync --frozen`** (dbt / dev / diagrams) so installs stay predictable.
 
    ```bash
-   cd churn-prac
+   cd churn-prediction
    uv venv .venv-sm --python 3.13
    uv pip install --python .venv-sm/bin/python "sagemaker>=2,<3"
    ```

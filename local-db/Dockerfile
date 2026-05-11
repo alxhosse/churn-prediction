@@ -1,4 +1,4 @@
-# PostgreSQL for churn-prac (same pattern as sqlplayground).
+# PostgreSQL for churn-prediction (same pattern as sqlplayground).
 FROM postgres:16-alpine
 
 ENV POSTGRES_USER=postgres
