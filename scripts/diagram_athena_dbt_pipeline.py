@@ -19,22 +19,24 @@ def _repo_root() -> Path:
 
 
 def render(*, outfile_base: Path, direction: str) -> Path:
-    base = outfile_base.with_suffix("") if outfile_base.suffix.lower() == ".png" else outfile_base
+    base = outfile_base
+    if base.suffix.lower() == ".png":
+        base = base.with_suffix("")
     base.parent.mkdir(parents=True, exist_ok=True)
 
     stem = base.relative_to(_repo_root()).as_posix()
 
     graph_attrs = {
-    "size": "16,10",
-    "dpi": "300",
-    "pad": "0.3",
-    "nodesep": "0.9",
-    "ranksep": "1.2",
-    "splines": "ortho",
-    "compound": "true",
-    "newrank": "true",
-    "concentrate": "false",
-    "fontname": "Sans-Serif",
+        "size": "16,10",
+        "dpi": "300",
+        "pad": "0.3",
+        "nodesep": "0.9",
+        "ranksep": "1.2",
+        "splines": "ortho",
+        "compound": "true",
+        "newrank": "true",
+        "concentrate": "false",
+        "fontname": "Sans-Serif",
     }
 
     node_attrs = {
