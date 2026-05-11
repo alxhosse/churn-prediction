@@ -1,0 +1,28 @@
+# Local secrets (never commit; keep *.example tracked)
+.env
+.env.*
+!.env.example
+
+# Large / sensitive local data (Fight Churn–style load file at repo root)
+actions2load.csv
+
+# Generated ML outputs and reports (not dbt seeds under dbt_churn/seeds/)
+outputs/
+ml/outputs/
+
+# Repo-level logs from ad-hoc runs
+/logs/
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.Python
+*.egg-info/
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# OS
+.DS_Store
