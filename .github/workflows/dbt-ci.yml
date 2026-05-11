@@ -48,6 +48,25 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --group dev --group dbt
 
+      # Service health runs inside the Postgres container; the host port mapping can lag.
+      # dbt templater / SQLFluff opens a TCP connection — wait until localhost accepts it.
+      - name: Wait for Postgres on runner (host port forward)
+        run: |
+          set -euo pipefail
+          host="${POSTGRES_HOST:?}"
+          port="${POSTGRES_PORT:?}"
+          for i in $(seq 1 60); do
+            if (exec 3<>"/dev/tcp/${host}/${port}") 2>/dev/null; then
+              exec 3>&-
+              echo "PostgreSQL reachable on ${host}:${port}"
+              exit 0
+            fi
+            echo "waiting for ${host}:${port} (${i}/60)..."
+            sleep 1
+          done
+          echo "PostgreSQL never became reachable on ${host}:${port}"
+          exit 1
+
       - name: dbt deps
         run: uv run dbt deps --project-dir dbt_churn --profiles-dir dbt_churn
 
