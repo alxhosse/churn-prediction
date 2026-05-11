@@ -16,7 +16,8 @@ elif [[ -f .env ]]; then
   source .env
   set +a
 else
-  echo "sqlfluff-fix.sh: no dbt_churn/.env or repo .env — dbt templater may fail (see dbt_churn/.env.example)." >&2
+  echo "sqlfluff-fix.sh: no dbt_churn/.env or repo .env — using profiles.yml defaults." >&2
+  echo "sqlfluff-fix.sh: target dev requires a reachable Postgres; see dbt_churn/.env.example." >&2
 fi
 
 exec uv run sqlfluff fix --config dbt_churn/.sqlfluff "$@"

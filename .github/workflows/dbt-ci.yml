@@ -1,5 +1,5 @@
-# Lint + dbt parse/compile (no warehouse connection required for parse).
-# SQLFluff uses dbt templater with dummy Postgres env vars (no server needed for parse).
+# Lint + dbt parse. SQLFluff's dbt templater opens a Postgres connection during compile;
+# the service below must be up (empty DB is enough).
 name: dbt CI
 
 on:
@@ -16,6 +16,20 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci-not-used
+          POSTGRES_DB: churn_prac
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d churn_prac"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       DBT_TARGET: dev
       POSTGRES_HOST: "127.0.0.1"

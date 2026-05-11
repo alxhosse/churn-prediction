@@ -3,7 +3,8 @@ dialect = postgres
 templater = dbt
 
 [sqlfluff:templater:dbt]
-project_dir = .
-profiles_dir = .
+# Paths are relative to repo root (where sqlfluff-lint.sh runs); avoids ~/.dbt when cwd is churn-prac.
+project_dir = dbt_churn
+profiles_dir = dbt_churn
 profile = dbt_churn
 target = dev
