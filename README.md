@@ -25,7 +25,18 @@ This builds and starts PostgreSQL via `local-db/docker-compose.yml` (default hos
 
 Useful targets: `make down`, `make psql`, `make url`, `make reload-data`. To fully reload seed data after the volume already exists: `docker compose -f local-db/docker-compose.yml down -v`, then `make up` again.
 
-### 2. dbt against local Postgres
+### 2. `actions2load.csv` from Google Drive
+
+The **`events.user_actions`** seed load expects **`actions2load.csv`** at the **repository root**. `local-db` mounts that root at `/workspace`, and init SQL **`COPY`** uses `/workspace/actions2load.csv`. The file is **gitignored**.
+
+```bash
+uv sync --frozen --group dev    # installs gdown
+uv run python scripts/download_actions2load.py   # writes ./actions2load.csv (default)
+```
+
+Uses the shared Drive id baked into `scripts/download_actions2load.py` (`--file-id` / `-o` override). Prefer a **fresh** Postgres volume so init runs **`COPY`** on first start (`make up` after the file exists), or **`make reload-data`** if the container is already populated.
+
+### 3. dbt against local Postgres
 
 ```bash
 cp dbt_churn/.env.example dbt_churn/.env   # tweak if you changed Postgres port or credentials
@@ -36,7 +47,7 @@ make -C dbt_churn dbt-build    # or: dbt-run / dbt-test
 
 The default profile target is **`dev`** (Postgres). For Athena from your laptop, set `DBT_TARGET=ci` and the `ATHENA_*` variables described in `dbt_churn/.env.example` (and in the secrets section below).
 
-### 3. CSV exports for ML notebooks
+### 4. CSV exports for ML notebooks
 
 The preprocess notebook expects **`ml/outputs/churn_training_dataset.csv`** and **`ml/outputs/current_customer_dataset.csv`**. After a successful local dbt build, you can export the marts with the helper scripts (they write to `./outputs/` at the repo root by default):
 
@@ -47,7 +58,7 @@ uv run python scripts/output.py
 cp outputs/churn_training_dataset.csv outputs/current_customer_dataset.csv ml/outputs/
 ```
 
-### 4. SageMaker Local Mode notebooks
+### 5. SageMaker Local Mode notebooks
 
 These run the same Docker images CI pushes to ECR, but on your machine using [SageMaker Local Mode](https://docs.aws.amazon.com/sagemaker/latest/dg/use-with-sm.html):
 
@@ -125,5 +136,6 @@ If the two **`ATHENA_ML_EXPORT_*`** values are missing in the workflow environme
 
 - `dbt_churn/` — dbt project and `make` shortcuts  
 - `local-db/` — Postgres Docker image and load SQL  
+- `scripts/` — helpers (`download_actions2load.py`, CSV exports)  
 - `ml/src/churn_ml/` — train, preprocess, inference entrypoints  
 - `.github/workflows/` — CI/CD definitions  

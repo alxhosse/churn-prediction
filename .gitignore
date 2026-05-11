@@ -5,6 +5,8 @@
 
 # Large / sensitive local data (Fight Churn–style load file at repo root)
 actions2load.csv
+# gdown (and similar) incomplete downloads — never commit
+*.part
 
 # Generated ML outputs and reports (not dbt seeds under dbt_churn/seeds/)
 outputs/
