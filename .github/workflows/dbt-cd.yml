@@ -1,7 +1,15 @@
-# Manual dbt build on Athena (OIDC). Secrets: ATHENA_* + ATHENA_ML_EXPORT_* (real S3 prefixes) + AWS_ROLE_ARN; Terraform OIDC trust for this repo.
+# dbt build on Athena (OIDC). Secrets: ATHENA_* + ATHENA_ML_EXPORT_* (real S3 prefixes) + AWS_ROLE_ARN; Terraform OIDC trust for this repo.
 name: dbt CD — Athena
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - "dbt_churn/**"
+  pull_request:
+    paths:
+      - "dbt_churn/**"
   workflow_dispatch:
 
 env:

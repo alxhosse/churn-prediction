@@ -15,7 +15,7 @@ Optional **Variables**: `AWS_REGION` (default `us-east-1`), `ML_INSTANCE_TYPE` (
 
 ### dbt on Athena — workflow `dbt-cd.yml`
 
-Same **`AWS_ROLE_ARN`** as above (needs Athena + Glue + S3 on your bucket prefixes).
+Runs on **push to `main`** or **pull request** when **`dbt_churn/**`** changes, and on **`workflow_dispatch`**. Same **`AWS_ROLE_ARN`** as above (needs Athena + Glue + S3 on your bucket prefixes).
 
 | Secret | Description |
 |--------|-------------|
