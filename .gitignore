@@ -15,8 +15,9 @@ ml/outputs/
 # Repo-level logs from ad-hoc runs
 /logs/
 
-# Python
+# Python (default project env vs optional SageMaker-only env — see README)
 .venv/
+.venv-sm/
 venv/
 __pycache__/
 *.py[cod]

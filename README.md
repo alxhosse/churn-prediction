@@ -72,8 +72,18 @@ These run the same Docker images CI pushes to ECR, but on your machine using [Sa
 
 **Setup**
 
-1. Install the AWS SageMaker Python SDK (not pinned in this repo’s lockfile): e.g. `uv pip install sagemaker`.
-2. Install the **`ml`** dependency group if you edit or run package code outside the containers: `uv sync --frozen --group ml` (plus any split groups you need).
+1. **Separate env `./.venv-sm` for SageMaker Python SDK v2** (`sagemaker` is deliberately **not** in **`uv.lock`**). Use **`.venv-sm`** only for notebooks + **`sagemaker`**, and keep **`./.venv`** for **`uv sync --frozen`** (dbt / dev / diagrams) so installs stay predictable.
+
+   ```bash
+   cd churn-prac
+   uv venv .venv-sm --python 3.13
+   uv pip install --python .venv-sm/bin/python "sagemaker>=2,<3"
+   ```
+
+   Point Jupyter / Cursor / VS Code at **`./.venv-sm/bin/python`** and select that kernel (**`.venv-sm`** is the notebook display name in-repo).
+
+2. **`uv sync --group ml`** installs `pandas`, `xgboost`, etc. into **`./.venv`** (what **`uv run`** uses—for CSV export helpers and editing **`churn_ml`** on the host). For notebooks that **only** drive Docker via Local Mode, you can skip **`ml`** inside **`.venv-sm`**. Add packages there only if notebook cells **`import`** them directly, e.g. **`uv pip install --python .venv-sm/bin/python pandas`**.
+
 3. Build images from the **repository root** (tags must match the notebooks):
 
    ```bash
@@ -82,7 +92,7 @@ These run the same Docker images CI pushes to ECR, but on your machine using [Sa
    docker build -f ml/containers/inference.Dockerfile -t churn-inference:local .
    ```
 
-4. Open a notebook server from the repo root (or set `PROJECT_ROOT` in the first cells as documented in each notebook). Training expects processed files under `ml/outputs/processed/`; inference expects a trained model under `ml/outputs/models/` after you run preprocess + train flows.
+4. Open a notebook server from the repo root (or set **`PROJECT_ROOT`** in the first cells as documented in each notebook). Training expects processed files under **`ml/outputs/processed/`**; inference expects a trained model under **`ml/outputs/models/`** after you run preprocess + train flows.
 
 ---
 
