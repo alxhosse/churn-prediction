@@ -2,6 +2,10 @@
 
 Practice repo for a Fight Churn–style pipeline: event data in PostgreSQL, dbt models (Postgres locally, Amazon Athena in CI/CD), and SageMaker-style train / preprocess / inference containers. Companion Terraform for AWS (OIDC role, ECR, Athena paths, and so on) lives in the **`aws-terraform-infra`** repo — apply that stack and trust this GitHub repository for OIDC before cloud workflows succeed.
 
+**Architecture (Athena · dbt · SageMaker):**
+
+![Churn-prac Athena · dbt · SageMaker](diagrams/athena_dbt_churn_ci.png)
+
 ---
 
 ## Prerequisites
@@ -136,6 +140,6 @@ If the two **`ATHENA_ML_EXPORT_*`** values are missing in the workflow environme
 
 - `dbt_churn/` — dbt project and `make` shortcuts  
 - `local-db/` — Postgres Docker image and load SQL  
-- `scripts/` — helpers (`download_actions2load.py`, CSV exports)  
+- `scripts/` — helpers (CSV export, `download_actions2load.py`, **`diagram_athena_dbt_pipeline.py`** needs Graphviz `dot`; `uv sync --group dev`)  
 - `ml/src/churn_ml/` — train, preprocess, inference entrypoints  
 - `.github/workflows/` — CI/CD definitions  
