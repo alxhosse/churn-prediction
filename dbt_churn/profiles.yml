@@ -1,0 +1,22 @@
+dbt_churn:
+  target: "{{ env_var('DBT_TARGET', 'dev') }}"
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('POSTGRES_HOST', 'localhost') }}"
+      user: "{{ env_var('POSTGRES_USER', 'postgres') }}"
+      password: "{{ env_var('POSTGRES_PASSWORD', 'playground') }}"
+      port: "{{ env_var('POSTGRES_PORT', '5433') | int }}"
+      dbname: "{{ env_var('POSTGRES_DATABASE', 'churn_prac') }}"
+      schema: "{{ env_var('POSTGRES_SCHEMA', 'dbt_schema') }}"
+      threads: 4
+
+    ci:
+      type: athena
+      region_name: "{{ env_var('AWS_REGION', 'ca-central-1') }}"
+      database: "{{ env_var('ATHENA_DATABASE', 'awsdatacatalog') }}"
+      schema: "{{ env_var('ATHENA_SCHEMA', 'dbt_churn_ci') }}"
+      s3_staging_dir: "{{ env_var('ATHENA_S3_STAGING_DIR') }}"
+      s3_data_dir: "{{ env_var('ATHENA_S3_DATA_DIR') }}"
+      work_group: "{{ env_var('ATHENA_WORK_GROUP', 'primary') }}"
+      threads: 4

@@ -1,0 +1,8 @@
+version: 2
+
+sources:
+  - name: events
+    schema: events
+
+    tables:
+      - name: user_actions

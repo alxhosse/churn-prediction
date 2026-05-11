@@ -1,0 +1,19 @@
+name: churn-prac
+
+services:
+  postgres:
+    build: .
+    ports:
+      # Published on 5433 by default so another Postgres (e.g. sqlplayground) can use 5432.
+      - "${POSTGRES_PORT:-5433}:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-playground}
+      POSTGRES_DB: ${POSTGRES_DB:-churn_prac}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Repo root (parent of local-db) so /workspace/actions2load.csv and reload SQL paths work.
+      - ..:/workspace:ro
+
+volumes:
+  postgres_data:

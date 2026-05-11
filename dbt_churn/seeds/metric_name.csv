@@ -1,0 +1,13 @@
+metric_name_id,metric_name,event_type,lookback_days,metric_kind
+1,n_ReadingOwnedBook_last_28d,ReadingOwnedBook,28,basic_event_count
+2,n_EBookDownloaded_last_28d,EBookDownloaded,28,basic_event_count
+3,n_ReadingFreePreview_last_28d,ReadingFreePreview,28,basic_event_count
+4,n_HighlightCreated_last_28d,HighlightCreated,28,basic_event_count
+5,n_SearchMade_last_28d,SearchMade,28,basic_event_count
+6,n_BookmarkCreated_last_28d,BookmarkCreated,28,basic_event_count
+7,n_total_events_last_90d,*,90,total_events
+8,n_unique_products_last_90d,*,90,unique_products
+9,n_free_content_actions_last_28d,*,28,total_metric
+10,n_enhanced_reading_actions_last_28d,*,28,total_metric
+11,pct_reading_owned_book_events_last_28d,*,28,ratio_metric
+12,n_downloads_per_unique_product_last_90d,*,90,ratio_metric
