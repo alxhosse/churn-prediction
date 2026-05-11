@@ -121,7 +121,12 @@ owned_book_ratio as (
         d.metric_time,
         11 as metric_name_id,
 
-        {{ as_double("case when d.metric_value > 0 then coalesce(n.metric_value, 0) / d.metric_value else 0 end") }} as metric_value
+        {{
+            as_double(
+                "case when d.metric_value > 0 then "
+                ~ "coalesce(n.metric_value, 0) / d.metric_value else 0 end"
+            )
+        }} as metric_value
 
     from total_events as d
 
@@ -144,7 +149,12 @@ downloads_per_product as (
         d.metric_time,
         12 as metric_name_id,
 
-        {{ as_double("case when d.metric_value > 0 then coalesce(n.metric_value, 0) / d.metric_value else 0 end") }} as metric_value
+        {{
+            as_double(
+                "case when d.metric_value > 0 then "
+                ~ "coalesce(n.metric_value, 0) / d.metric_value else 0 end"
+            )
+        }} as metric_value
 
     from unique_products as d
 

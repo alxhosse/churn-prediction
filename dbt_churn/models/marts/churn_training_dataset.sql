@@ -8,7 +8,7 @@
     format='parquet',
 ) }}
 {% else %}
-{{ config(materialized='table') }}
+    {{ config(materialized='table') }}
 {% endif %}
 
 with observation as (

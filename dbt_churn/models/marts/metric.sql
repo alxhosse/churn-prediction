@@ -26,7 +26,12 @@ metric_values as (
         on
             cast(u.event_time as timestamp) < d.metric_time
             and cast(u.event_time as timestamp)
-            >= {{ metric_lookback_lower_bound('d.metric_time', 'm.lookback_days') }}
+            >= {{
+                metric_lookback_lower_bound(
+                    'd.metric_time',
+                    'm.lookback_days'
+                )
+            }}
     group by
         u.account_id,
         d.metric_time,
